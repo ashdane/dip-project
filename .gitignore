@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Datasets
+lol_dataset/
+*.zip
+*.tar.gz
+
+# Temporary / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Large / scratch outputs
+results/intermediates/
