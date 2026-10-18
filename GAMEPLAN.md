@@ -1,4 +1,4 @@
-# Detailed Project Gameplan & Work Allocation
+# Project Gameplan & Work Allocation
 
 **Project:** Adaptive RTV Illumination Estimation for Low-Light Image Enhancement  
 **Dataset:** LOL Dataset (`eval15`)  
@@ -10,98 +10,73 @@
 
 | Team Member | Primary Focus Area | Key Deliverables |
 |:---|:---|:---|
-| **Ashish** (Daniel Ashish Abraham) | **Variant A: Illumination-Adaptive RTV** + Pipeline Integration | Mathematical formulation of $\lambda_{\text{illum}}(p)$, sparse solver integration in `baseline.py` / `adaptive_rtv.py`, overall code architecture |
-| **Adeeb** (Mohammed Adeeb) | **Variant B: Texture-Adaptive RTV** + Sensitivity Analysis | RTV windowed variation reweighting for $\lambda_{\text{tex}}(p)$, $\lambda$-$\sigma$ grid sweep script, tuned baseline identification |
+| **Ashish** (Daniel Ashish Abraham) | **Variant A: Illumination-Adaptive RTV** + Pipeline Architecture | Formulation of $\lambda_{\text{illum}}(p)$, sparse solver adaptation, module integration |
+| **Adeeb** (Mohammed Adeeb) | **Variant B: Texture-Adaptive RTV** + Sensitivity Analysis | $\lambda$-$\sigma$ grid sweep script, RTV windowed variation reweighting $\lambda_{\text{tex}}(p)$, tuned baseline |
 | **Arun** (Arun K) | **Benchmarking, Statistical Analysis & Visual Proofs** | Comparative testing script (PSNR, SSIM, SD, IE, AG), Wilcoxon signed-rank tests, zoomed visual crop comparisons, runtime profiling |
-| **All Together** | **Final Report & Presentation** | Joint report writing, results discussion, failure case analysis |
+| **All Together** | **Final Report & Deliverables** | Joint report writing, results discussion, failure case analysis |
 
 ---
 
-## 🗓️ Detailed Phase-by-Phase Gameplan
+## 📋 Action Items by Member
 
-### Phase 1: Establish Tuned Baseline & Sensitivity Analysis (Days 1–3)
-**Owner: Adeeb** (Assisted by Arun)
-
-* **Objective:** The paper hid $\lambda$ and $\sigma$. We need to systematically explore the parameter space to establish the optimal fixed-parameter baseline (Deliverable 3).
-* **Tasks for Adeeb:**
-  1. Create `sensitivity_analysis.py`:
-     - Grid sweep over $\lambda \in \{0.001, 0.005, 0.015, 0.03, 0.05, 0.1\}$
-     - Grid sweep over $\sigma \in \{1.0, 2.0, 3.0, 5.0\}$
-     - Fast evaluation mode: run with fixed weights $(w_1, w_2)$ from baseline to save computation, or subsample LOL images to determine sensitivity trends quickly.
-  2. Plot sensitivity curves: $\lambda$ vs. PSNR/SSIM, $\sigma$ vs. AG/SD.
-  3. Identify the best fixed pair $(\lambda^*, \sigma^*)$ = **"Tuned Baseline"**.
-* **Deliverable:** `results/sensitivity/` heatmaps + `metrics_sensitivity.csv`.
-
----
-
-### Phase 2: Implement Variant A — Illumination-Adaptive RTV (Days 3–6)
-**Owner: Ashish**
-
-* **Objective:** Low-SNR dark regions suffer from severe sensor noise amplification. $\lambda(p)$ should increase in dark regions (stronger smoothing) and decrease in well-lit regions (preserve fine detail).
-* **Tasks for Ashish:**
-  1. Compute local normalized luminance from the input image $I$:
-     $$\tilde{Y}(p) = \frac{Y(p) - Y_{\min}}{Y_{\max} - Y_{\min}}$$
-     (Optionally smoothed with a lightweight spatial Gaussian to prevent sharp jumps).
-  2. Formulate spatially-varying $\lambda_A(p)$:
-     $$\lambda_A(p) = \lambda_{\min} + (\lambda_{\max} - \lambda_{\min}) \cdot (1 - \tilde{Y}(p))^\gamma$$
-     where $\gamma \ge 1$ controls transition steepness, $\lambda_{\max}$ suppresses dark noise, and $\lambda_{\min}$ preserves bright structure.
-  3. Modify the sparse solver:
-     - In standard RTV, the linear system solves $(I_N + \lambda L) \cdot S = I$.
-     - With per-pixel $\lambda(p)$, the Laplacian weight matrix scales row $p$ by $\lambda(p)$:
-       $$(I_N + \text{diag}(\boldsymbol{\lambda}) \cdot L) \cdot S = I$$
-  4. Create `adaptive_rtv.py` supporting `--mode illumination`.
-* **Deliverable:** Working Variant A module + verification on sample images (`1.png`, `111.png`, `146.png`).
+### 👨‍💻 Ashish
+- [ ] **Formulate Illumination-Adaptive $\lambda(p)$ (Variant A)**:
+  - Extract normalized local luminance $\tilde{Y}(p)$ from the input image.
+  - Map luminance to per-pixel smoothing weight:
+    $$\lambda_A(p) = \lambda_{\min} + (\lambda_{\max} - \lambda_{\min}) \cdot (1 - \tilde{Y}(p))^\gamma$$
+    *(Dark regions get stronger smoothing to suppress noise; bright regions get lower smoothing to preserve structure).*
+- [ ] **Sparse Solver Integration**:
+  - Update the RTV sparse linear system in `adaptive_rtv.py` to support per-pixel diagonal reweighting:
+    $$(I_N + \text{diag}(\boldsymbol{\lambda}) \cdot L) \cdot S = I$$
+- [ ] **Pipeline Orchestration**:
+  - Integrate selectable RTV modes (`--rtv-mode uniform|illumination|texture`) into the unified runner.
+- [ ] **Report Sections**:
+  - Write Section 1 (Introduction & Problem Statement), Section 3 (Variant A Formulation), and Section 6 (Discussion & Conclusion).
 
 ---
 
-### Phase 3: Implement Variant B — Texture-Adaptive RTV (Days 4–7)
-**Owner: Adeeb** (Assisted by Ashish)
-
-* **Objective:** Textures and noise should be smoothed out from the illumination layer, while prominent structural edges must be strictly preserved to avoid halos.
-* **Tasks for Adeeb:**
-  1. Leverage the windowed variation ratio inside RTV:
-     $$r_x(p) = \frac{D_x(p)}{L_x(p) + \epsilon}, \quad r_y(p) = \frac{D_y(p)}{L_y(p) + \epsilon}$$
-     where $D(p)$ is total variation and $L(p)$ is inherent variation.
-  2. In high-texture / noisy regions, $r(p) \approx 1$. Near strong structural edges, $r(p) \gg 1$.
-  3. Formulate texture-adaptive mapping:
-     $$\lambda_B(p) = \lambda_0 \cdot \exp\left(-\frac{\|\nabla I(p)\|^2}{2\sigma_e^2}\right) \quad \text{or} \quad \lambda_B(p) = \frac{\lambda_{\text{base}}}{1 + \kappa \cdot \max(r_x(p), r_y(p))}$$
-  4. Ensure the IRLS solver maintains matrix symmetry or positive definiteness for fast SciPy `spsolve` convergence.
-* **Deliverable:** Working Variant B module in `adaptive_rtv.py` supporting `--mode texture`.
-
----
-
-### Phase 4: Comparative Benchmarking & Statistical Evaluation (Days 7–9)
-**Owner: Arun**
-
-* **Objective:** Rigorously prove whether Variant A and Variant B outperform the uniform baseline (Addresses Issue 2 of proposal).
-* **Tasks for Arun:**
-  1. Build automated batch evaluation harness:
-     - Run 4 configurations on all 15 LOL eval images:
-       1. Baseline (paper default: $\lambda=0.015, \sigma=3.0$)
-       2. Tuned Baseline ($\lambda^*, \sigma^*$)
-       3. Variant A (Illumination-Adaptive)
-       4. Variant B (Texture-Adaptive)
-  2. Compute Full Evaluation Metrics:
-     - **Full-reference:** PSNR, SSIM, and LOE (Lightness Order Error).
-     - **No-reference:** SD, IE, AG.
-     - **Runtime cost:** Execution time per stage (RTV solver vs. ABC optimizer).
-  3. Statistical Significance Testing:
-     - Compute paired two-tailed $t$-test and Wilcoxon signed-rank test ($p$-values) comparing each variant against the baseline.
-  4. High-Resolution Visual Inspection:
-     - Generate zoomed comparison crops (bounding box patches) showcasing:
-       - Suppression of dark noise in background shadows.
-       - Elimination of halo artifacts along high-contrast boundaries.
-* **Deliverable:** Master comparison table (`metrics_comparison.csv`), significance test report, and visual patch figures (`figure_crops.png`).
+### 👨‍💻 Adeeb
+- [ ] **Sensitivity Analysis Script (`sensitivity_analysis.py`)**:
+  - Sweep $\lambda \in \{0.001, 0.005, 0.015, 0.03, 0.05, 0.1\}$ and $\sigma \in \{1.0, 2.0, 3.0, 5.0\}$.
+  - Run with fixed fusion weights $(w_1, w_2)$ to explore parameter sensitivity efficiently.
+  - Find the optimal parameter pair $(\lambda^*, \sigma^*)$ = **Tuned Baseline**.
+- [ ] **Formulate Texture-Adaptive $\lambda(p)$ (Variant B)**:
+  - Extract RTV windowed variation ratio inside the solver:
+    $$r(p) = \max\left(\frac{D_x(p)}{L_x(p) + \epsilon}, \; \frac{D_y(p)}{L_y(p) + \epsilon}\right)$$
+  - Formulate texture-dependent attenuation:
+    $$\lambda_B(p) = \frac{\lambda_{\text{base}}}{1 + \kappa \cdot r(p)}$$
+    *(Smooth textured noise while preserving structural edges to avoid halos).*
+- [ ] **Numerical Stability & Convergence**:
+  - Verify that the IRLS matrix formulation remains symmetric positive-definite for SciPy sparse solvers.
+- [ ] **Report Sections**:
+  - Write Section 2 (Related Work & Baseline Details) and co-author Section 3 (Variant B Formulation) & Section 4 (Sensitivity Analysis).
 
 ---
 
-### Phase 5: Final Report & Documentation (Days 9–11)
-**Owner: All (Lead: Ashish, Sections by Adeeb & Arun)**
+### 👨‍💻 Arun
+- [ ] **Automated Benchmark Harness**:
+  - Run evaluation across all 15 LOL eval images for all 4 configurations:
+    1. Paper Baseline ($\lambda = 0.015, \sigma = 3.0$)
+    2. Tuned Baseline ($\lambda^*, \sigma^*$)
+    3. Variant A (Illumination-Adaptive)
+    4. Variant B (Texture-Adaptive)
+- [ ] **Metrics Computation**:
+  - **Full-reference**: PSNR, SSIM
+  - **No-reference**: SD, IE, AG
+  - **Efficiency**: Per-stage execution time (RTV vs. ABC)
+- [ ] **Statistical Significance Testing**:
+  - Perform paired two-tailed $t$-tests and Wilcoxon signed-rank tests ($p$-values) comparing each variant against the baseline.
+- [ ] **Qualitative Comparison Figures**:
+  - Generate high-resolution zoomed crops highlighting noise suppression in dark shadows and edge preservation (no halos).
+- [ ] **Report Sections**:
+  - Write Section 4 (Experimental Results & Significance Tables) and Section 5 (Qualitative Visual Analysis & Failure Modes).
 
-* **Section Breakdown:**
-  - **Section 1: Introduction & Problem Statement** — *Ashish*
-  - **Section 2: Related Work & Baseline Reproduction Details** — *Adeeb* (documenting unstated parameters)
-  - **Section 3: Proposed Adaptive RTV Formulations (Variant A & B)** — *Ashish & Adeeb*
-  - **Section 4: Experimental Results & Sensitivity Analysis** — *Adeeb & Arun* (Tables, Boxplots, Wilcoxon tests)
-  - **Section 5: Qualitative Visual Analysis & Failure Modes** — *Arun*
-  - **Section 6: Discussion, Computational Complexity & Conclusion** — *Ashish*
+---
+
+## 📦 Final Deliverables Checklist
+- [x] Reproduce Sun et al. (2022) baseline and log LOL eval15 metrics (`baseline.py`, `results/metrics.csv`).
+- [ ] Parameter sensitivity analysis and tuned baseline identification (`sensitivity_analysis.py`).
+- [ ] Adaptive RTV implementation with Variant A and Variant B (`adaptive_rtv.py`).
+- [ ] Comparative benchmark results table and statistical test outputs (`results/comparison_metrics.csv`).
+- [ ] Visual crop figures demonstrating noise and halo handling.
+- [ ] Final written report and presentation.
